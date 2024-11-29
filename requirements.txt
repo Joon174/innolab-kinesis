@@ -1,0 +1,8 @@
+numpy
+botocore
+boto3
+PyGObject
+opencv-python
+imageio==2.22.1
+av==10.0.0
+kinesis-video-streams-producer
