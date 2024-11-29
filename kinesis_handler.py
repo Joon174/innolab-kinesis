@@ -12,7 +12,10 @@ from amazon_kinesis_video_consumer_library.kinesis_video_fragment_processor impo
 import numpy
 
 # Python native libraries
-import time, json, uuid
+import time, json, uuid, gi
+from io import BytesIO
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
 
 
 class KinesisVideoConsumer:
@@ -88,5 +91,63 @@ class KinesisVideoConsumer:
             APIName=api_name
         )
         return response['DataEndpoint']
+
+
+class KinesisVideoProducer:
+    VIDEO_CAPTURE_PIPELINE = 'v4l2src device=/dev/video0 ! videoconvert ! video/x-raw,format=I420,width=640,height=480,framerate=30/1 ! appsink'
+
+    def __init__(self, stream_name):
+        Gst.init(None)  
+        
+        # Create Kinesis Video Client:
+        self.kinesis_video_client = boto3.client('kinesisvideo', region_name=KINESIS_REGION_NAME)
+        self.stream_name = stream_name
+
+        # Get the Kinesis Video Stream endpoint
+        stream_endpoint_response = self.kinesis_video_client.get_data_endpoint(
+            StreamName=self.stream_name,
+            APIName='PUT_MEDIA'
+        )
+        self.endpoint_url = stream_endpoint_response['DataEndpoint']
+ 
+        # Set up the Kinesis Video Media Client
+        self.media_client = boto3.client('kinesis-video-media', endpoint_url=self.endpoint_url, region_name=KINESIS_REGION_NAME)
+
+        self.gst_pipeline = Gst.parse_launch(KinesisVideoProducer.VIDEO_CAPTURE_PIPELINE)
+        self.appsink = self.gst_pipeline.get_by_name('appsink0')
+
+    def send_to_kinesis(self, datastream):
+        try:
+            response = self.media_client.put_media(
+                StreamName=self.stream_name,
+                Payload=datastream,
+                PartitionKey='partition-key',
+            )
+            print(f"Successfully send data to Kinesis: {response}")
+
+        except Exception as e:
+            print(f"Error sending data to Kinesis: {e}")
+
+    def on_new_sample(self, sink):
+        sample = sink.emit('pull-sample')
+        if sample:
+            kvs_buffer = sample.get_buffer()
+            data = kvs_buffer.extract_dup(0, kvs_buffer.get_size())
+            self.send_to_kinesis(data)
+
+        return Gst.FlowReturn.OK
+
+
+    def start_pipeline_stream(self):
+        self.appsink.connect('new-sample', self.on_new_sample)
+        self.gst_pipeline.set_state(Gst.State.PLAYING)
+
+        try:
+            while True:
+                time.sleep(0.1)
+
+        except KeyboardInterrupt:
+            print("Keyboard interrupt signal received, STOPPING...")
+            self.gst_pipeline.set_state(Gst.State.NULL)
 
 
