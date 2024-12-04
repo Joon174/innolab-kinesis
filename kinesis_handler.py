@@ -37,6 +37,7 @@ class KinesisVideoConsumer:
 
         # Obtain media endpoint for GetMedia Call
         media_endpoint = self._get_data_endpoint(self.stream_name, 'GET_MEDIA')
+        print("Endpoint of kinesis stream is {}".format(media_endpoint))
         kvs_media_client = self.session.client('kinesis-video-media', endpoint_url=media_endpoint)
 
 
@@ -58,11 +59,19 @@ class KinesisVideoConsumer:
         # Start the instance and run the consumer
         stream_consumer.start()
         while True:
+            print("Running Consumer")
             time.sleep(5)
 
     # Callback function for when frames are recvd in the data stream
-    def fragment_callback(self, fragment_bytes, fragment_dom, fragment_recv_duration):
+    def fragment_callback(self, stream_name, fragment_bytes, fragment_dom, fragment_recv_duration):
         try:
+
+            print('\n\n##########################\nFragment Received on Stream: {}\n##########################'.format(stream_name))
+            
+            # Print the fragment receive and processing duration as measured by the KvsConsumerLibrary
+            print('####### Fragment Receive and Processing Duration: {} secs'.format(fragment_recv_duration))
+
+            print("fragment found with size: {}".format(fragment_bytes))
             time_now = time.time()
 
             self.last_good_fragment_tags = self.kvs_fragment_processor.get_fragment_tags(fragment_dom)
@@ -109,7 +118,8 @@ class KinesisVideoProducer:
             APIName='PUT_MEDIA'
         )
         self.endpoint_url = stream_endpoint_response['DataEndpoint']
- 
+        print(self.endpoint_url)
+        
         # Set up the Kinesis Video Media Client
         self.media_client = boto3.client('kinesis-video-media', endpoint_url=self.endpoint_url, region_name=KINESIS_REGION_NAME)
 
@@ -141,10 +151,12 @@ class KinesisVideoProducer:
     def start_pipeline_stream(self):
         self.appsink.connect('new-sample', self.on_new_sample)
         self.gst_pipeline.set_state(Gst.State.PLAYING)
+        print("Pipeline started")
 
         try:
             while True:
-                time.sleep(0.1)
+                print("Running")
+                time.sleep(0.5)
 
         except KeyboardInterrupt:
             print("Keyboard interrupt signal received, STOPPING...")
