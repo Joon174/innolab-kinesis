@@ -12,7 +12,7 @@ from amazon_kinesis_video_consumer_library.kinesis_video_fragment_processor impo
 import numpy
 
 # Python native libraries
-import time, json, uuid, gi
+import time, json, uuid, gi, os
 from io import BytesIO
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
@@ -70,8 +70,6 @@ class KinesisVideoConsumer:
             
             # Print the fragment receive and processing duration as measured by the KvsConsumerLibrary
             print('####### Fragment Receive and Processing Duration: {} secs'.format(fragment_recv_duration))
-
-            print("fragment found with size: {}".format(fragment_bytes))
             time_now = time.time()
 
             self.last_good_fragment_tags = self.kvs_fragment_processor.get_fragment_tags(fragment_dom)
@@ -81,8 +79,35 @@ class KinesisVideoConsumer:
             server_timestamp = float(self.last_good_fragment_tags['AWS_KINESISVIDEO_SERVER_TIMESTAMP'])
 
             pretty_frag_dom = self.kvs_fragment_processor.get_fragement_dom_pretty_string(fragment_dom)
+
+            # Uncomment to save the fragments as frames to local dir
+            # self.save_fragment_as_jpg(fragment_bytes)
+
         except:
             print("callback failed")
+
+    # Save fragments as JPGs in local dir
+    def save_fragment_as_jpg(self, fragment_bytes):
+        # Construct the frame based on the fragment received:
+        one_in_frames_ratio = 5
+        print('#######  Reading 1 in {} Frames from fragment as ndarray:'.format(one_in_frames_ratio))
+        ndarray_frames = self.kvs_fragment_processor.get_frames_as_ndarray(fragment_bytes, one_in_frames_ratio)
+        print('Processing frames: ')
+        for i in range(len(ndarray_frames)):
+            ndarray_frame = ndarray_frames[i]
+            print('Frame-{} Shape: {}'.format(i, ndarray_frame.shape))
+
+        # Save them as JPEG frames locally:
+        print('###### Saving frames to local dir:')
+        one_in_frames_ratio = 5
+        save_dir = 'images_from_kinesis'
+        jpg_file_base_name = self.last_good_fragment_tags['AWS_KINESISVIDEO_FRAGMENT_NUMBER']
+        jpg_file_base_path = os.path.join(save_dir, jpg_file_base_name)
+
+        jpeg_paths = self.kvs_fragment_processor.save_frames_as_jpeg(fragment_bytes, one_in_frames_ratio, jpg_file_base_path)
+        for i in range(len(jpeg_paths)):
+            jpeg_path = jpeg_paths[i]
+            print('Saved JPEG-{} Path: {}'.format(i, jpeg_path))
 
     # Callback trigger when the stream exits or there are no fragments left
     # available.
@@ -103,7 +128,10 @@ class KinesisVideoConsumer:
 
 
 class KinesisVideoProducer:
-    VIDEO_CAPTURE_PIPELINE = 'v4l2src device=/dev/video0 ! videoconvert ! video/x-raw,format=I420,width=640,height=480,framerate=30/1 ! appsink'
+    """
+    Creates a producer using the local SDK to push data to remote. Pipeline command based on https://github.com/awslabs/amazon-kinesis-video-streams-producer-sdk-cpp/blob/master/docs/linux.md
+    """
+#   VIDEO_CAPTURE_PIPELINE = 'v4l2src do-timestamp=TRUE device=/dev/video0 ! videoconvert ! video/x-raw,format=I420,width=640,height=480,framerate=30/1 ! x264enc ! h264parse ! video/x-h264,stream-format=avc,alignment=au,width=640,height=480,framerate=30/1,profile=baseline ! kvssink stream-name="innolab-bag-scanning"'
 
     def __init__(self, stream_name):
         Gst.init(None)  
