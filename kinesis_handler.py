@@ -18,6 +18,9 @@ gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
 
+os.environ["AWS_DEFAULT_REGION"]=KINESIS_REGION_NAME
+
+
 class KinesisVideoConsumer:
     '''
     Initialise the KVS Client. Thi will include the Fragment processor for 
@@ -131,47 +134,20 @@ class KinesisVideoProducer:
     """
     Creates a producer using the local SDK to push data to remote. Pipeline command based on https://github.com/awslabs/amazon-kinesis-video-streams-producer-sdk-cpp/blob/master/docs/linux.md
     """
-#   VIDEO_CAPTURE_PIPELINE = 'v4l2src do-timestamp=TRUE device=/dev/video0 ! videoconvert ! video/x-raw,format=I420,width=640,height=480,framerate=30/1 ! x264enc ! h264parse ! video/x-h264,stream-format=avc,alignment=au,width=640,height=480,framerate=30/1,profile=baseline ! kvssink stream-name="innolab-bag-scanning"'
+    VIDEO_CAPTURE_PIPELINE = 'v4l2src do-timestamp=TRUE device=/dev/video0 ! videoconvert ! video/x-raw,format=I420,width=640,height=480,framerate=30/1 ! x264enc ! h264parse ! video/x-h264,stream-format=avc,alignment=au,width=640,height=480,framerate=30/1,profile=baseline ! kvssink stream-name="innolab-bag-scanning" access-key='+AWS_ACCESS_KEY_ID+'secret-key='+AWS_SECRET_ACCESS_KEY_ID
 
+    # Setup GStreamer pipeline using the line above:
     def __init__(self, stream_name):
-        Gst.init(None)  
-        
-        # Create Kinesis Video Client:
-        self.kinesis_video_client = boto3.client('kinesisvideo', region_name=KINESIS_REGION_NAME)
-        self.stream_name = stream_name
-
-        # Get the Kinesis Video Stream endpoint
-        stream_endpoint_response = self.kinesis_video_client.get_data_endpoint(
-            StreamName=self.stream_name,
-            APIName='PUT_MEDIA'
-        )
-        self.endpoint_url = stream_endpoint_response['DataEndpoint']
-        print(self.endpoint_url)
-        
-        # Set up the Kinesis Video Media Client
-        self.media_client = boto3.client('kinesis-video-media', endpoint_url=self.endpoint_url, region_name=KINESIS_REGION_NAME)
-
+        Gst.init(None)
         self.gst_pipeline = Gst.parse_launch(KinesisVideoProducer.VIDEO_CAPTURE_PIPELINE)
         self.appsink = self.gst_pipeline.get_by_name('appsink0')
 
-    def send_to_kinesis(self, datastream):
-        try:
-            response = self.media_client.put_media(
-                StreamName=self.stream_name,
-                Payload=datastream,
-                PartitionKey='partition-key',
-            )
-            print(f"Successfully send data to Kinesis: {response}")
-
-        except Exception as e:
-            print(f"Error sending data to Kinesis: {e}")
-
+    # callback function for every frame that it receives in the video stream:
     def on_new_sample(self, sink):
         sample = sink.emit('pull-sample')
         if sample:
             kvs_buffer = sample.get_buffer()
             data = kvs_buffer.extract_dup(0, kvs_buffer.get_size())
-            self.send_to_kinesis(data)
 
         return Gst.FlowReturn.OK
 
@@ -182,9 +158,9 @@ class KinesisVideoProducer:
         print("Pipeline started")
 
         try:
+            print("Running producer")
             while True:
-                print("Running")
-                time.sleep(0.5)
+                time.sleep(0.1)
 
         except KeyboardInterrupt:
             print("Keyboard interrupt signal received, STOPPING...")
