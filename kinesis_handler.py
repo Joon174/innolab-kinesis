@@ -133,28 +133,70 @@ class KinesisVideoConsumer:
 class KinesisVideoProducer:
     """
     Creates a producer using the local SDK to push data to remote. Pipeline command based on https://github.com/awslabs/amazon-kinesis-video-streams-producer-sdk-cpp/blob/master/docs/linux.md
+
+    This pipeline will use the embedded webcam of a laptop with NVIDIA graphic driver for video processing
     """
     VIDEO_CAPTURE_PIPELINE = 'v4l2src do-timestamp=TRUE device=/dev/video0 ! videoconvert ! video/x-raw,format=I420,width=640,height=480,framerate=30/1 ! x264enc ! h264parse ! video/x-h264,stream-format=avc,alignment=au,width=640,height=480,framerate=30/1,profile=baseline ! kvssink stream-name="innolab-bag-scanning" access-key='+AWS_ACCESS_KEY_ID+'secret-key='+AWS_SECRET_ACCESS_KEY_ID
 
     # Setup GStreamer pipeline using the line above:
     def __init__(self, stream_name):
         Gst.init(None)
-        self.gst_pipeline = Gst.parse_launch(KinesisVideoProducer.VIDEO_CAPTURE_PIPELINE)
-        self.appsink = self.gst_pipeline.get_by_name('appsink0')
 
-    # callback function for every frame that it receives in the video stream:
-    def on_new_sample(self, sink):
-        sample = sink.emit('pull-sample')
-        if sample:
-            kvs_buffer = sample.get_buffer()
-            data = kvs_buffer.extract_dup(0, kvs_buffer.get_size())
+        # Setup video source
+        vid_source = Gst.ElementFactory.make('v4l2src', 'source')
+        vid_source.set_property('do-timestamp', True)
+        vid_source.set_property('device', '/dev/video0')
+        
+        # Setup converter for GStream
+        convert = Gst.ElementFactory.make('videoconvert', 'convert')
 
-        return Gst.FlowReturn.OK
+        # Setup Frame filter for GStreamer
+        capsfilter = Gst.ElementFactory.make('capsfilter', 'capsfilter')
+        caps = Gst.Caps.from_string('video/x-raw,format=I420,width=640,height=480,framerate=30/1')
+        capsfilter.set_property('caps', caps)
 
+        # Setup encoding type for GStreamer:
+        # @note: the following GStreamer pipeine assumes a nvidia driver is used for video processing
+        encoder = Gst.ElementFactory.make('x264enc', 'encoder')
+
+        parser = Gst.ElementFactory.make('h264parse', 'parser')
+
+        capsfilter2 = Gst.ElementFactory.make('capsfilter', 'capsfilter2')
+        caps2 = Gst.Caps.from_string('video/x-h264,stream-format=avc,alignment=au,width=640,height=480,framerate=30/1,profile=baseline')
+        capsfilter2.set_property('caps', caps2)
+
+        sink = Gst.ElementFactory.make('kvssink', 'sink')
+        sink.set_property('stream-name', 'innolab-bag-scanning')
+        sink.set_property('access-key', AWS_ACCESS_KEY_ID)
+        sink.set_property('secret_key', AWS_SECRET_ACCESS_KEY_ID)
+
+        self.gst_pipeline = Gst.Pipeline.new('KVS_innolab_producer')
+
+        self.create_pipeline(vid_source, convert, capsfilter, encoder, parser, capsfilter2, sink)
+
+    def create_pipeline(self, source, convert, cap_fil, encoder, parser, cap_fil2, sink):
+        print("Creating pipeline")
+
+        # Add elements to the pipeline
+        self.gst_pipeline.add(source)
+        self.gst_pipeline.add(convert)
+        self.gst_pipeline.add(cap_fil)
+        self.gst_pipeline.add(encoder)
+        self.gst_pipeline.add(parser)
+        self.gst_pipeline.add(cap_fil2)
+        self.gst_pipeline.add(sink)
+
+        # Link the elements together
+        source.link(convert)
+        convert.link(cap_fil)
+        cap_fil.link(encoder)
+        encoder.link(parser)
+        parser.link(cap_fil2)
+        cap_fil2.link(sink)
 
     def start_pipeline_stream(self):
-        self.appsink.connect('new-sample', self.on_new_sample)
         self.gst_pipeline.set_state(Gst.State.PLAYING)
+        bus = self.gst_pipeline.get_bus()
         print("Pipeline started")
 
         try:
