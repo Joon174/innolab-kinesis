@@ -59,4 +59,14 @@ RUN cmake .. -DBUILD_GSTREAMER_PLUGIN=ON -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON && \
 ENV LD_LIBRARY_PATH=/opt/amazon-kinesis-video-streams-producer-sdk-cpp/open-source/local/lib
 ENV GST_PLUGIN_PATH=/opt/amazon-kinesis-video-streams-producer-sdk-cpp/build/:$GST_PLUGIN_PATH
 
+
+# Download and plugin the consumer
 ENV AWS_DEFAULT_REGION="ap-southeast-2"
+
+WORKDIR /opt/
+RUN git clone --depth 1 --branch main https://github.com/Joon174/innolab-kinesis.git
+WORKDIR /opt/innolab-kinesis/
+
+
+
+ENTRYPOINT["python3 run_consumer.py"]
