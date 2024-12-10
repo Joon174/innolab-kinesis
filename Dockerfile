@@ -43,6 +43,7 @@ RUN apt update && \
 	m4 \
 	libmpfr-dev \
 	pkg-config \
+	python3-pip \
 	vim \
 	wget \
 	xz-utils && \
@@ -68,5 +69,6 @@ RUN git clone --depth 1 --branch main https://github.com/Joon174/innolab-kinesis
 WORKDIR /opt/innolab-kinesis/
 
 COPY settings.py .
+RUN python3 -m pip install -r requirements.txt
 
-ENTRYPOINT["python3 run_consumer.py"]
+ENTRYPOINT ["python3", "/opt/innolab-kinesis/run_consumer.py"]
