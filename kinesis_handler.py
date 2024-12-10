@@ -19,6 +19,8 @@ from gi.repository import Gst
 
 
 os.environ["AWS_DEFAULT_REGION"]=KINESIS_REGION_NAME
+os.environ["AWS_ACCESS_KEY_ID"]=AWS_ACCESS_KEY_ID
+os.environ["AWS_SECRET_ACCESS_KEY"]=AWS_SECRET_ACCESS_KEY_ID
 
 
 class KinesisVideoConsumer:
