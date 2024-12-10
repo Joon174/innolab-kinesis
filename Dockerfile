@@ -67,6 +67,6 @@ WORKDIR /opt/
 RUN git clone --depth 1 --branch main https://github.com/Joon174/innolab-kinesis.git
 WORKDIR /opt/innolab-kinesis/
 
-
+COPY settings.py .
 
 ENTRYPOINT["python3 run_consumer.py"]
