@@ -35,6 +35,7 @@ RUN apt update && \
 	gstreamer1.0-gtk3 \
 	gstreamer1.0-qt5 \
 	gstreamer1.0-pulseaudio \
+	libcairo2-dev \
 	libcurl4-openssl-dev \
 	libffi-dev \
 	libmpc-dev \
@@ -65,10 +66,12 @@ ENV GST_PLUGIN_PATH=/opt/amazon-kinesis-video-streams-producer-sdk-cpp/build/:$G
 ENV AWS_DEFAULT_REGION="ap-southeast-2"
 
 WORKDIR /opt/
+ADD https://api.github.com/repos/Joon174/innolab-kinesis/git/refs/heads/main version.json
 RUN git clone --depth 1 --branch main https://github.com/Joon174/innolab-kinesis.git
 WORKDIR /opt/innolab-kinesis/
 
 COPY settings.py .
+RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install -r requirements.txt
 
 ENTRYPOINT ["python3", "/opt/innolab-kinesis/run_consumer.py"]
