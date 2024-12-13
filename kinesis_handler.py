@@ -32,45 +32,44 @@ class KinesisVideoConsumer:
     '''
     def __init__(self, stream_name):
         self.kvs_fragment_processor = KvsFragmentProcessor()
-        self.stream_name = stream_name
         self.session = boto3.Session(region_name=KINESIS_REGION_NAME)
         self.kvs_client = self.session.client("kinesisvideo")
         self.last_good_fragment_tags = None
-
-    # Main loop for consuming fragments
-    def service_loop(self):
+        self.producer_terminated = False
+        self.fragment_received = False
 
         # Obtain media endpoint for GetMedia Call
-        media_endpoint = self._get_data_endpoint(self.stream_name, 'GET_MEDIA')
+        media_endpoint = self._get_data_endpoint(stream_name, 'GET_MEDIA')
         print("Endpoint of kinesis stream is {}".format(media_endpoint))
         kvs_media_client = self.session.client('kinesis-video-media', endpoint_url=media_endpoint)
 
-
         # Make an API call to start connection
         media_response_callback = kvs_media_client.get_media(
-                StreamName=self.stream_name,
+                StreamName=stream_name,
                 StartSelector={
                     'StartSelectorType': 'NOW',
                 }
             )
 
-        stream_consumer = KvsConsumerLibrary(self.stream_name,
+        self.stream_consumer = KvsConsumerLibrary(stream_name,
                             media_response_callback,
                             self.fragment_callback,
                             self.stream_read_complete,
                             self.stream_read_error
                         )
-        
+    def stop(self):
+        self.stream_consumer.stop_thread()
+
+    # Main loop for the Consumer logic
+    def start(self):
         # Start the instance and run the consumer
-        stream_consumer.start()
-        while True:
-            print("Running Consumer")
-            time.sleep(5)
+        self.stream_consumer.start()
 
     # Callback function for when frames are recvd in the data stream
+    # It is estimated 300 fragments will arrive within 10 second periods from experimentation
     def fragment_callback(self, stream_name, fragment_bytes, fragment_dom, fragment_recv_duration):
         try:
-
+            self.fragment_received = True
             print('\n\n##########################\nFragment Received on Stream: {}\n##########################'.format(stream_name))
             
             # Print the fragment receive and processing duration as measured by the KvsConsumerLibrary
@@ -92,6 +91,8 @@ class KinesisVideoConsumer:
             print("callback failed")
 
     # Save fragments as JPGs in local dir
+    # Ratio refers to one every X frames. i.e. it will save one frame and skip the next X-1 frames
+    # e.g. 5 ratio will mean taking one frame then skip the next 4
     def save_fragment_as_jpg(self, fragment_bytes):
         # Construct the frame based on the fragment received:
         one_in_frames_ratio = 5
@@ -118,6 +119,7 @@ class KinesisVideoConsumer:
     # available.
     def stream_read_complete(self, stream_name):
         print(f'Read Media on stream: {stream_name} Completed successfully - Last Fragment Tags: {self.last_good_fragment_tags}')
+        self.producer_terminated = True
 
     # Callback trigger for any exceptions thrown when reading the fragments
     # during the stream
